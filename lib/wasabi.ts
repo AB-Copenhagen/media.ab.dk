@@ -1,5 +1,6 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { redis } from './redis';
 
 let _client: S3Client | undefined;
 let _bucket = '';
@@ -46,15 +47,16 @@ export async function deleteFileFromWasabi(objectKey: string): Promise<void> {
   await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: objectKey }));
 }
 
-const URL_TTL_S  = 86400; // 24 h — how long the signed URL is valid
-const CACHE_TTL  = (URL_TTL_S - 3600) * 1000; // evict 1 h before expiry (ms)
+const URL_TTL_S   = 86400;        // 24 h — how long the signed URL is valid
+const CACHE_TTL_S = URL_TTL_S - 3600; // evict 1 h before expiry
 
-const urlCache = new Map<string, { url: string; expiresAt: number }>();
+const CACHE_PREFIX = 'presigned:';
 
 export async function getPresignedUrl(objectKey: string): Promise<string> {
-  const now    = Date.now();
-  const cached = urlCache.get(objectKey);
-  if (cached && cached.expiresAt > now) return cached.url;
+  const cacheKey = CACHE_PREFIX + objectKey;
+
+  const cached = await redis.get<string>(cacheKey);
+  if (cached) return cached;
 
   const { client, bucket } = getClient();
   const url = await getSignedUrl(
@@ -62,7 +64,8 @@ export async function getPresignedUrl(objectKey: string): Promise<string> {
     new GetObjectCommand({ Bucket: bucket, Key: objectKey }),
     { expiresIn: URL_TTL_S },
   );
-  urlCache.set(objectKey, { url, expiresAt: now + CACHE_TTL });
+
+  await redis.set(cacheKey, url, { ex: CACHE_TTL_S });
   return url;
 }
 
