@@ -20,7 +20,7 @@ export default async function AssetDetailPage({ params }: { params: { id: string
     prisma.season.findMany({ orderBy: { startDate: 'desc' }, select: { id: true, name: true } }),
     prisma.collection.findMany({ orderBy: { date: 'desc' }, select: { id: true, name: true, type: true } }),
     prisma.stadium.findMany({ orderBy: { name: 'asc' }, select: { id: true, name: true } }),
-    getPresignedUrl(asset.objectKey, 86400),
+    getPresignedUrl(asset.objectKey),
   ]);
 
   return (

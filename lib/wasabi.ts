@@ -46,13 +46,24 @@ export async function deleteFileFromWasabi(objectKey: string): Promise<void> {
   await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: objectKey }));
 }
 
-export async function getPresignedUrl(objectKey: string, expiresIn = 3600): Promise<string> {
+const URL_TTL_S  = 86400; // 24 h — how long the signed URL is valid
+const CACHE_TTL  = (URL_TTL_S - 3600) * 1000; // evict 1 h before expiry (ms)
+
+const urlCache = new Map<string, { url: string; expiresAt: number }>();
+
+export async function getPresignedUrl(objectKey: string): Promise<string> {
+  const now    = Date.now();
+  const cached = urlCache.get(objectKey);
+  if (cached && cached.expiresAt > now) return cached.url;
+
   const { client, bucket } = getClient();
-  return getSignedUrl(
+  const url = await getSignedUrl(
     client,
     new GetObjectCommand({ Bucket: bucket, Key: objectKey }),
-    { expiresIn }
+    { expiresIn: URL_TTL_S },
   );
+  urlCache.set(objectKey, { url, expiresAt: now + CACHE_TTL });
+  return url;
 }
 
 export async function getPresignedUploadUrl(objectKey: string, contentType: string, expiresIn = 300): Promise<string> {

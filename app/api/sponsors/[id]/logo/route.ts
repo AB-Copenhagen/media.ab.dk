@@ -16,6 +16,6 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   }
 
   // Wasabi objectKey — generate presigned URL
-  const signed = await getPresignedUrl(val, 3600);
+  const signed = await getPresignedUrl(val);
   return NextResponse.redirect(signed, { status: 307 });
 }

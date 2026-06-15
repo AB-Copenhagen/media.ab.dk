@@ -10,6 +10,6 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   const asset = await prisma.asset.findUnique({ where: { id: params.id }, select: { objectKey: true } });
   if (!asset) return NextResponse.json({ message: 'Not found' }, { status: 404 });
 
-  const url = await getPresignedUrl(asset.objectKey, 3600);
+  const url = await getPresignedUrl(asset.objectKey);
   return NextResponse.redirect(url, { status: 307 });
 }
