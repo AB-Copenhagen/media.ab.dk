@@ -70,9 +70,9 @@ WASABI_BUCKET=
 WASABI_ACCESS_KEY_ID=
 WASABI_SECRET_ACCESS_KEY=
 
-# Wasabi AIR (AI tagging — get from Wasabi console → AIR panel)
-WASABI_AIR_API_URL=
-WASABI_AIR_API_KEY=
+# Wasabi AIR — dedicated IAM user credentials (create via Wasabi console → AIR)
+WASABI_AIR_ACCESS_KEY_ID=
+WASABI_AIR_SECRET_ACCESS_KEY=
 
 # Upstash Redis
 UPSTASH_REDIS_REST_URL=
