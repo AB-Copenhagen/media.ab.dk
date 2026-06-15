@@ -133,7 +133,15 @@ button, input, textarea, select { font: inherit; }
   border-top: 1px solid rgba(255,255,255,0.06);
 }
 
-.user-info { padding: 8px; margin-bottom: 6px; }
+.user-info {
+  display: block;
+  padding: 8px;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.user-info:hover { background: rgba(255,255,255,0.06); }
 .user-name {
   font-size: 13px;
   font-weight: 500;

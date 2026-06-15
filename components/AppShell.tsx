@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { User } from '../lib/auth';
 import NavLinks from './NavLinks';
 import LogoutButton from './LogoutButton';
@@ -25,10 +26,10 @@ export default function AppShell({
         </nav>
 
         <div className="sidebar-footer">
-          <div className="user-info">
+          <Link href="/profile" className="user-info">
             <div className="user-name">{user.name ?? user.email}</div>
             <div className="user-role">{user.role}</div>
-          </div>
+          </Link>
           <LogoutButton />
         </div>
       </aside>
