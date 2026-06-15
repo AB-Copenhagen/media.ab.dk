@@ -223,6 +223,17 @@ export default function BulkUploadZone() {
         continue;
       }
 
+      // Step 2b: Extract EXIF client-side (images only, non-blocking)
+      let exifJson: string | null = null;
+      if (item.file.type.startsWith('image/')) {
+        try {
+          const { default: exifr } = await import('exifr');
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const exif = await (exifr.parse as any)(item.file, { all: true });
+          if (exif) exifJson = JSON.stringify(exif);
+        } catch { /* non-fatal */ }
+      }
+
       // Step 3: Confirm — save the DB record via our API
       setStatus({ statusMsg: 'Saving…' });
       try {
@@ -241,6 +252,7 @@ export default function BulkUploadZone() {
             manualTags:   tags,
             collectionId: collectionId || null,
             seasonId:     seasonId     || null,
+            exifJson,
           }),
         });
         if (res.ok) {

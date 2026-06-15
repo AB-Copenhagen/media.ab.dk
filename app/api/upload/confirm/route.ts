@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   const {
     objectKey, fileName, fileType, fileSize,
     title, eventName, eventDate, location,
-    manualTags, collectionId, seasonId,
+    manualTags, collectionId, seasonId, exifJson,
   } = body as {
     objectKey?: string;
     fileName?: string;
@@ -27,6 +27,7 @@ export async function POST(request: Request) {
     manualTags?: string[];
     collectionId?: string;
     seasonId?: string;
+    exifJson?: string | null;
   };
 
   if (!objectKey || !fileType || !fileSize) {
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
         wasbaiResponseJson: JSON.stringify(tagResult ?? {}),
         collectionId: collectionId || null,
         seasonId:     seasonId    || null,
-        exifJson:     null,
+        exifJson:     exifJson ?? null,
       },
     });
   } catch (err) {

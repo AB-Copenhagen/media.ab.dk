@@ -36,46 +36,64 @@ function formatBytes(b: number) {
 
 function ExifPanel({ exifJson }: { exifJson: string | null }) {
   const [open, setOpen] = useState(false);
-  if (!exifJson) return (
-    <div style={{ color: '#8890b4', fontSize: 13, padding: '12px 0' }}>No EXIF data available for this file.</div>
-  );
 
   let exif: Record<string, unknown> = {};
-  try { exif = JSON.parse(exifJson); } catch { return null; }
+  if (exifJson) {
+    try { exif = JSON.parse(exifJson); } catch { /* ignore */ }
+  }
+
+  const w = (exif.ImageWidth ?? exif.ExifImageWidth ?? exif.PixelXDimension) as number | undefined;
+  const h = (exif.ImageHeight ?? exif.ExifImageHeight ?? exif.PixelYDimension) as number | undefined;
+
+  let dateTaken = '';
+  if (exif.DateTimeOriginal) {
+    try { dateTaken = new Date(exif.DateTimeOriginal as string).toLocaleString('en-GB'); } catch { /* ignore */ }
+  }
 
   const fields = [
-    ['Date taken',     exif.DateTimeOriginal ? new Date(exif.DateTimeOriginal as string).toLocaleString('en-GB') : ''],
-    ['Camera',         [exif.Make, exif.Model].filter(Boolean).join(' ')],
-    ['Dimensions',     exif.ImageWidth && exif.ImageHeight ? `${exif.ImageWidth} × ${exif.ImageHeight}` : ''],
-    ['Focal length',   exif.FocalLength ? `${exif.FocalLength}mm` : ''],
-    ['Aperture',       exif.FNumber ? `f/${exif.FNumber}` : ''],
-    ['ISO',            exif.ISO ? String(exif.ISO) : ''],
-    ['Shutter speed',  exif.ExposureTime ? `1/${Math.round(1 / (exif.ExposureTime as number))}s` : ''],
-    ['GPS',            exif.latitude && exif.longitude ? `${(exif.latitude as number).toFixed(6)}, ${(exif.longitude as number).toFixed(6)}` : ''],
-    ['Orientation',    exif.Orientation ? String(exif.Orientation) : ''],
-    ['Lens',           exif.LensModel ? String(exif.LensModel) : ''],
-    ['Software',       exif.Software ? String(exif.Software) : ''],
+    ['Date taken',    dateTaken],
+    ['Camera',        [exif.Make, exif.Model].filter(Boolean).join(' ')],
+    ['Dimensions',    w && h ? `${w} × ${h}` : ''],
+    ['Focal length',  exif.FocalLength ? `${exif.FocalLength}mm` : ''],
+    ['Aperture',      exif.FNumber ? `f/${exif.FNumber}` : ''],
+    ['ISO',           exif.ISO ? String(exif.ISO) : ''],
+    ['Shutter speed', exif.ExposureTime ? `1/${Math.round(1 / (exif.ExposureTime as number))}s` : ''],
+    ['Lens',          exif.LensModel ? String(exif.LensModel) : ''],
+    ['GPS',           exif.latitude && exif.longitude
+      ? `${(exif.latitude as number).toFixed(6)}, ${(exif.longitude as number).toFixed(6)}` : ''],
+    ['Orientation',   exif.Orientation ? String(exif.Orientation) : ''],
+    ['Software',      exif.Software ? String(exif.Software) : ''],
   ].filter(([, v]) => v);
 
+  const hasData = fields.length > 0;
+
   return (
-    <div>
+    <div style={{ borderTop: '1px solid #f0f2f7' }}>
       <button
         type="button"
         className="btn-ghost"
-        style={{ width: '100%', justifyContent: 'space-between', color: '#3a3f58', padding: '10px 0', borderBottom: '1px solid #f0f2f7' }}
+        style={{ width: '100%', justifyContent: 'space-between', color: '#3a3f58', padding: '12px 16px' }}
         onClick={() => setOpen((o) => !o)}
       >
-        <span style={{ fontWeight: 600, fontSize: 13 }}>EXIF / Camera data</span>
-        <span style={{ fontSize: 18, lineHeight: 1 }}>{open ? '−' : '+'}</span>
+        <span style={{ fontWeight: 600, fontSize: 13 }}>
+          EXIF / Camera data
+          {!hasData && <span style={{ fontWeight: 400, color: '#8890b4', marginLeft: 8 }}>— not available</span>}
+        </span>
+        <span style={{ fontSize: 18, lineHeight: 1, color: '#8890b4' }}>{open ? '−' : '+'}</span>
       </button>
-      {open && (
-        <div style={{ marginTop: 10 }}>
+      {open && hasData && (
+        <div style={{ padding: '0 16px 14px' }}>
           {fields.map(([label, value]) => (
             <div key={label} style={{ display: 'flex', gap: 8, padding: '5px 0', borderBottom: '1px solid #f7f8fc', fontSize: 13 }}>
               <span style={{ color: '#8890b4', width: 110, flexShrink: 0 }}>{label}</span>
               <span style={{ color: '#2d3154' }}>{value}</span>
             </div>
           ))}
+        </div>
+      )}
+      {open && !hasData && (
+        <div style={{ padding: '0 16px 14px', fontSize: 13, color: '#8890b4' }}>
+          No camera metadata found in this file.
         </div>
       )}
     </div>
@@ -167,31 +185,34 @@ export default function AssetDetailClient({
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 20, alignItems: 'start' }}>
-      {/* Preview */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        {isVideo ? (
-          <video
-            src={signedUrl}
-            controls
-            style={{ width: '100%', display: 'block', background: '#0d0f1c', maxHeight: 520 }}
-          />
-        ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={signedUrl}
-            alt={asset.title || asset.objectKey}
-            style={{ width: '100%', display: 'block', maxHeight: 580, objectFit: 'contain', background: '#0d0f1c' }}
-          />
-        )}
-        <div style={{ padding: '12px 16px', borderTop: '1px solid #f0f2f7', display: 'flex', gap: 16, fontSize: 12, color: '#8890b4' }}>
-          <span>{asset.fileType.split('/')[1]?.toUpperCase()}</span>
-          <span>{formatBytes(asset.fileSize)}</span>
-          <span>Uploaded by {asset.uploaderEmail}</span>
-          <span>{new Date(asset.uploadedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+      {/* Left column: preview + EXIF */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          {isVideo ? (
+            <video
+              src={signedUrl}
+              controls
+              style={{ width: '100%', display: 'block', background: '#0d0f1c', maxHeight: 520 }}
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={signedUrl}
+              alt={asset.title || asset.objectKey}
+              style={{ width: '100%', display: 'block', maxHeight: 580, objectFit: 'contain', background: '#0d0f1c' }}
+            />
+          )}
+          <div style={{ padding: '12px 16px', borderTop: '1px solid #f0f2f7', display: 'flex', gap: 16, fontSize: 12, color: '#8890b4' }}>
+            <span>{asset.fileType.split('/')[1]?.toUpperCase()}</span>
+            <span>{formatBytes(asset.fileSize)}</span>
+            <span>Uploaded by {asset.uploaderEmail}</span>
+            <span>{new Date(asset.uploadedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+          </div>
+          <ExifPanel exifJson={asset.exifJson} />
         </div>
       </div>
 
-      {/* Metadata form */}
+      {/* Right column: metadata form */}
       <div>
         <div className="card">
           <div className="card-header">Metadata</div>
@@ -267,10 +288,6 @@ export default function AssetDetailClient({
           <button className="btn-danger" type="button" onClick={deleteAsset} disabled={saving || deleting} style={{ width: '100%', justifyContent: 'center', marginTop: 8 }}>
             {deleting ? <><span className="spinner" /> Deleting…</> : 'Delete asset'}
           </button>
-        </div>
-
-        <div className="card">
-          <ExifPanel exifJson={asset.exifJson} />
         </div>
 
         <div className="card">
