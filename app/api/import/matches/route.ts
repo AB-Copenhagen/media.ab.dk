@@ -1,23 +1,38 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUser } from '../../../../lib/auth';
 import { prisma } from '../../../../lib/db';
-import type { ParsedMatch } from '../../../../lib/sofascore-import';
+import { fetchSeasonFixtures } from '../../../../lib/api-football';
+import type { ParsedMatch } from '../../../../lib/api-football';
 
-// GET — return existing game-collection keys so client can mark duplicates
-export async function GET() {
+// GET — fetch fixtures from api-football server-side + existing keys for dedup
+export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
+
+  const { searchParams } = new URL(request.url);
+  const season = parseInt(searchParams.get('season') ?? '2024', 10);
+
+  let fixtures: ParsedMatch[] = [];
+  let apiError: string | null = null;
+
+  try {
+    fixtures = await fetchSeasonFixtures(season);
+  } catch (e) {
+    apiError = e instanceof Error ? e.message : 'Failed to fetch fixtures';
+  }
 
   const existing = await prisma.collection.findMany({
     where: { type: 'game' },
     select: { name: true, date: true },
   });
+  const existingKeys = new Set(
+    existing.map((c) => `${c.name}|${c.date?.toISOString().split('T')[0] ?? ''}`),
+  );
 
-  const keys = existing.map((c) => `${c.name}|${c.date?.toISOString().split('T')[0] ?? ''}`);
-  return NextResponse.json({ keys });
+  return NextResponse.json({ fixtures, existingKeys: [...existingKeys], apiError });
 }
 
-// POST — client sends parsed matches; server deduplicates and saves
+// POST — save selected matches to the DB
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });

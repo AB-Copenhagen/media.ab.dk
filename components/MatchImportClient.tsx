@@ -1,8 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { fetchSeasonMatches, parseMatch } from '../lib/sofascore-import';
-import type { ParsedMatch } from '../lib/sofascore-import';
+import type { ParsedMatch } from '../lib/api-football';
 
 type MatchRow = ParsedMatch & { exists: boolean };
 
@@ -14,37 +13,49 @@ const RESULT_STYLE: Record<string, { bg: string; color: string }> = {
   L: { bg: '#fee2e2', color: '#b91c1c' },
 };
 
+// api-football free plan: seasons 2022–2024 only. Season 2025 (25/26) requires paid plan.
+const API_SEASONS = [
+  { value: '2024', label: '2024/25' },
+  { value: '2023', label: '2023/24' },
+  { value: '2022', label: '2022/23' },
+];
+
 export default function MatchImportClient({ seasons }: { seasons: Season[] }) {
-  const [matches,   setMatches]   = useState<MatchRow[] | null>(null);
-  const [selected,  setSelected]  = useState<Set<number>>(new Set());
-  const [seasonId,  setSeasonId]  = useState(seasons[0]?.id ?? '');
-  const [loading,   setLoading]   = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [result,    setResult]    = useState<{ created: number; skipped: number } | null>(null);
-  const [error,     setError]     = useState('');
+  const [matches,    setMatches]    = useState<MatchRow[] | null>(null);
+  const [selected,   setSelected]   = useState<Set<number>>(new Set());
+  const [seasonId,   setSeasonId]   = useState(seasons[0]?.id ?? '');
+  const [apiSeason,  setApiSeason]  = useState('2024');
+  const [loading,    setLoading]    = useState(false);
+  const [importing,  setImporting]  = useState(false);
+  const [result,     setResult]     = useState<{ created: number; skipped: number } | null>(null);
+  const [error,      setError]      = useState('');
 
   async function preview() {
     setLoading(true);
     setError('');
     setResult(null);
     try {
-      // Fetch SofaScore directly from the browser (CORS: access-control-allow-origin: *)
-      const [raw, keysRes] = await Promise.all([
-        fetchSeasonMatches(),
-        fetch('/api/import/matches'),
-      ]);
-      const parsed = raw.map(parseMatch).sort((a, b) => a.date.localeCompare(b.date));
+      const res = await fetch(`/api/import/matches?season=${apiSeason}`);
+      if (!res.ok) throw new Error(`Server error (${res.status})`);
+      const data = await res.json() as {
+        fixtures: ParsedMatch[];
+        existingKeys: string[];
+        apiError: string | null;
+      };
 
-      const { keys } = await keysRes.json() as { keys: string[] };
-      const existingKeys = new Set(keys);
+      if (data.apiError) {
+        setError(data.apiError);
+        return;
+      }
 
-      const rows: MatchRow[] = parsed.map((m) => ({
+      const existingKeys = new Set(data.existingKeys);
+      const rows: MatchRow[] = data.fixtures.map((m) => ({
         ...m,
         exists: existingKeys.has(`${m.name}|${m.date}`),
       }));
 
       setMatches(rows);
-      setSelected(new Set(rows.filter((m) => !m.exists).map((m) => m.sofaId)));
+      setSelected(new Set(rows.filter((m) => !m.exists).map((m) => m.fixtureId)));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error loading matches');
     } finally {
@@ -58,7 +69,7 @@ export default function MatchImportClient({ seasons }: { seasons: Season[] }) {
     setImporting(true);
     setError('');
     try {
-      const toImport = matches.filter((m) => selected.has(m.sofaId));
+      const toImport = matches.filter((m) => selected.has(m.fixtureId));
       const res = await fetch('/api/import/matches', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -68,12 +79,15 @@ export default function MatchImportClient({ seasons }: { seasons: Season[] }) {
       const data = await res.json() as { created: number; skipped: number };
       setResult(data);
 
-      // Refresh existing-keys and mark rows
-      const keysRes = await fetch('/api/import/matches');
-      if (keysRes.ok) {
-        const { keys } = await keysRes.json() as { keys: string[] };
-        const existingKeys = new Set(keys);
-        setMatches((prev) => prev?.map((m) => ({ ...m, exists: existingKeys.has(`${m.name}|${m.date}`) })) ?? null);
+      // Refresh to mark imported rows
+      const refreshRes = await fetch(`/api/import/matches?season=${apiSeason}`);
+      if (refreshRes.ok) {
+        const refreshData = await refreshRes.json() as { fixtures: ParsedMatch[]; existingKeys: string[] };
+        const existingKeys = new Set(refreshData.existingKeys);
+        setMatches((prev) => prev?.map((m) => ({
+          ...m,
+          exists: existingKeys.has(`${m.name}|${m.date}`),
+        })) ?? null);
         setSelected(new Set());
       }
     } catch (e) {
@@ -85,16 +99,29 @@ export default function MatchImportClient({ seasons }: { seasons: Season[] }) {
 
   function toggleAll(value: boolean) {
     if (!matches) return;
-    setSelected(value ? new Set(matches.filter((m) => !m.exists).map((m) => m.sofaId)) : new Set());
+    setSelected(value
+      ? new Set(matches.filter((m) => !m.exists).map((m) => m.fixtureId))
+      : new Set());
   }
 
   const newCount = matches?.filter((m) => !m.exists).length ?? 0;
 
   return (
     <div>
-      <div className="card-header" style={{ marginBottom: 16 }}>Import Matches from SofaScore</div>
+      <div className="card-header" style={{ marginBottom: 4 }}>Import Matches from api-football</div>
+      <p style={{ fontSize: 13, color: '#6b7491', marginBottom: 16 }}>
+        Fetches AB Copenhagen fixtures (2. Division &amp; DBU Pokalen) via api-football.com.{' '}
+        <strong>Note:</strong> the free plan only covers seasons 2022–2024.
+        Season 2025 (25/26) requires a paid plan upgrade at api-football.com.
+      </p>
 
       <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 16, flexWrap: 'wrap' }}>
+        <div className="field" style={{ margin: 0, minWidth: 160 }}>
+          <label>API season</label>
+          <select value={apiSeason} onChange={(e) => { setApiSeason(e.target.value); setMatches(null); }}>
+            {API_SEASONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+        </div>
         <div className="field" style={{ margin: 0, minWidth: 200 }}>
           <label>Link to season</label>
           <select value={seasonId} onChange={(e) => setSeasonId(e.target.value)}>
@@ -103,7 +130,7 @@ export default function MatchImportClient({ seasons }: { seasons: Season[] }) {
           </select>
         </div>
         <button className="btn-secondary" type="button" onClick={preview} disabled={loading || importing}>
-          {loading ? <><span className="spinner" /> Loading…</> : 'Load 25/26 matches from SofaScore'}
+          {loading ? <><span className="spinner" /> Loading…</> : 'Load fixtures'}
         </button>
       </div>
 
@@ -144,7 +171,7 @@ export default function MatchImportClient({ seasons }: { seasons: Season[] }) {
                 {matches.map((m, i) => {
                   const rs = m.abResult ? RESULT_STYLE[m.abResult] : null;
                   return (
-                    <tr key={m.sofaId} style={{
+                    <tr key={m.fixtureId} style={{
                       borderBottom: i < matches.length - 1 ? '1px solid #f0f2f7' : undefined,
                       background: m.exists ? '#fafbff' : 'white',
                       opacity: m.exists ? 0.6 : 1,
@@ -152,12 +179,12 @@ export default function MatchImportClient({ seasons }: { seasons: Season[] }) {
                       <td style={{ padding: '7px 12px' }}>
                         <input
                           type="checkbox"
-                          checked={selected.has(m.sofaId)}
+                          checked={selected.has(m.fixtureId)}
                           disabled={m.exists}
                           onChange={(e) => {
                             setSelected((s) => {
                               const next = new Set(s);
-                              e.target.checked ? next.add(m.sofaId) : next.delete(m.sofaId);
+                              e.target.checked ? next.add(m.fixtureId) : next.delete(m.fixtureId);
                               return next;
                             });
                           }}
@@ -168,7 +195,7 @@ export default function MatchImportClient({ seasons }: { seasons: Season[] }) {
                         {new Date(m.date + 'T12:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </td>
                       <td style={{ padding: '7px 12px', color: '#6b7491', fontSize: 12 }}>
-                        {m.competition}{m.round ? ` · R${m.round}` : ''}
+                        {m.competition}{m.round ? ` · ${m.round.replace('Regular Season - ', 'R')}` : ''}
                       </td>
                       <td style={{ padding: '7px 12px', textAlign: 'center' }}>
                         <span style={{
@@ -191,7 +218,9 @@ export default function MatchImportClient({ seasons }: { seasons: Season[] }) {
                       <td style={{ padding: '7px 12px' }}>
                         {m.exists
                           ? <span style={{ fontSize: 11, color: '#16a34a' }}>✓ Imported</span>
-                          : <span style={{ fontSize: 11, color: '#8890b4' }}>New</span>}
+                          : <span style={{ fontSize: 11, color: '#8890b4' }}>
+                              {m.status === 'FT' ? 'Finished' : m.status === 'NS' ? 'Not started' : m.status}
+                            </span>}
                       </td>
                     </tr>
                   );
