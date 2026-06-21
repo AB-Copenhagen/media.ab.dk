@@ -15,7 +15,6 @@ import { getPresignedUrl } from './wasabi';
 
 const VISION_URL = 'https://vision.googleapis.com/v1/images:annotate';
 const STS_URL    = 'https://sts.googleapis.com/v1/token';
-const MAX_BYTES  = 10 * 1024 * 1024;
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
@@ -130,24 +129,13 @@ export interface GcvResult {
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export async function analyzeWithGcv(objectKey: string): Promise<GcvResult> {
-  // Download image from Wasabi
+  // Pass the presigned URL directly — GCV fetches from Wasabi (20 MB limit via URI vs 10 MB inline).
   const url   = await getPresignedUrl(objectKey);
-  const dlRes = await fetch(url);
-  if (!dlRes.ok) throw new Error(`Wasabi download failed: ${dlRes.status}`);
-
-  const buffer = Buffer.from(await dlRes.arrayBuffer());
-  if (buffer.byteLength > MAX_BYTES) {
-    throw new Error(
-      `Image too large for inline Vision API (${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB > 10 MB)`,
-    );
-  }
-
-  const base64 = buffer.toString('base64');
-  const token  = await getAccessToken();
+  const token = await getAccessToken();
 
   const body = {
     requests: [{
-      image: { content: base64 },
+      image: { source: { imageUri: url } },
       features: [
         { type: 'LABEL_DETECTION',      maxResults: 20 },
         { type: 'OBJECT_LOCALIZATION',  maxResults: 20 },
